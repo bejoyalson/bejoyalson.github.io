@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Blog articles and thoughts on software engineering, C#, ASP.NET Core, React, and web development best practices.">
+    <meta name="keywords" content="blog, software engineering, C#, ASP.NET Core, React, web development">
+    <meta name="author" content="Bejoy Alson">
+    
+    <link rel="canonical" href="https://bejoyalson.github.io/blog/">
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="css/blog.css">
+    
+    <title>Blog — Bejoy Alson</title>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-brand">
+                <a href="/">Bejoy Alson</a>
+            </div>
+            <ul class="nav-menu">
+                <li><a href="/#about">About</a></li>
+                <li><a href="/#projects">Projects</a></li>
+                <li><a href="/#blog">Blog</a></li>
+                <li><a href="/#contact">Contact</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Blog Listing -->
+    <section class="blog-listing">
+        <div class="container">
+            <h1>Blog</h1>
+            <p class="intro">Articles on software engineering, architecture, performance, and web development.</p>
+
+            <div class="blog-posts">
+                <article class="blog-post">
+                    <h3><a href="efcore-performance.html">From N+1 to Zero: EF Core Performance Patterns</a></h3>
+                    <p class="post-meta">Published Nov 7, 2025</p>
+                    <p>
+                        Deep dive into Entity Framework Core query optimization, including lazy loading gotchas, 
+                        compiled queries, and strategic use of Dapper for complex queries. Build performant data access layers.
+                    </p>
+                    <a href="efcore-performance.html" class="read-more">Read Article →</a>
+                </article>
+
+                <article class="blog-post">
+                    <h3><a href="vertical-slices.html">Designing Vertical Slice APIs in ASP.NET Core</a></h3>
+                    <p class="post-meta">Published Nov 1, 2025</p>
+                    <p>
+                        Why vertical slices beat layered architecture for maintainability. Includes patterns for organizing 
+                        controllers, handlers, DTOs, and validation within feature-based folders. Practical examples included.
+                    </p>
+                    <a href="vertical-slices.html" class="read-more">Read Article →</a>
+                </article>
+
+                <article class="blog-post">
+                    <h3><a href="react-performance-budgets.html">Implementing React Performance Budgets</a></h3>
+                    <p class="post-meta">Published Oct 25, 2025</p>
+                    <p>
+                        Practical guide to setting and enforcing JavaScript bundle size budgets in your React project. 
+                        Includes tooling setup (webpack, Rollup), CI integration, and refactoring strategies.
+                    </p>
+                    <a href="react-performance-budgets.html" class="read-more">Read Article →</a>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2025 Bejoy Alson. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="../js/main.js"></script>
+</body>
+</html>

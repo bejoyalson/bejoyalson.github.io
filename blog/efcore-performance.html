@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="From N+1 to Zero: EF Core Performance Patterns. Deep dive into Entity Framework Core query optimization, lazy loading, compiled queries, and strategic Dapper usage.">
+    <meta name="keywords" content="Entity Framework Core, EF Core, performance, N+1, query optimization, Dapper, C#">
+    <meta name="author" content="Bejoy Alson">
+    
+    <link rel="canonical" href="https://bejoyalson.github.io/blog/efcore-performance.html">
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="css/blog.css">
+    
+    <title>From N+1 to Zero: EF Core Performance Patterns — Bejoy Alson</title>
+    
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "BlogPosting",
+        "headline": "From N+1 to Zero: EF Core Performance Patterns",
+        "image": "https://bejoyalson.github.io/assets/blog-efcore.jpg",
+        "datePublished": "2025-11-07",
+        "dateModified": "2025-11-07",
+        "author": {
+            "@type": "Person",
+            "name": "Bejoy Alson",
+            "url": "https://bejoyalson.github.io"
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": "Bejoy Alson",
+            "url": "https://bejoyalson.github.io"
+        },
+        "description": "Deep dive into Entity Framework Core query optimization, including lazy loading gotchas, compiled queries, and strategic use of Dapper for complex queries."
+    }
+    </script>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-brand">
+                <a href="/">Bejoy Alson</a>
+            </div>
+            <ul class="nav-menu">
+                <li><a href="/#about">About</a></li>
+                <li><a href="/#projects">Projects</a></li>
+                <li><a href="/#blog">Blog</a></li>
+                <li><a href="/#contact">Contact</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Blog Post -->
+    <article class="blog-article">
+        <div class="container">
+            <div class="article-header">
+                <h1>From N+1 to Zero: EF Core Performance Patterns</h1>
+                <p class="article-meta">
+                    Published on <time datetime="2025-11-07">November 7, 2025</time> 
+                    by <a href="/">Bejoy Alson</a>
+                </p>
+            </div>
+
+            <div class="article-content">
+                <h2>Introduction</h2>
+                <p>
+                    Entity Framework Core is a powerful ORM, but misusing it can lead to N+1 query problems, 
+                    loading entire datasets unnecessarily, and performance degradation. In this article, we'll explore 
+                    proven patterns to eliminate these pitfalls.
+                </p>
+
+                <h2>The N+1 Problem: What Is It?</h2>
+                <p>
+                    The N+1 query problem occurs when your ORM executes one query to fetch a parent entity, 
+                    then N additional queries for each child entity. For example:
+                </p>
+                <pre><code>// Bad: N+1 queries
+var orders = dbContext.Orders.ToList(); // 1 query
+foreach (var order in orders)
+{
+    var items = order.Items.ToList(); // N queries (one per order)
+}</code></pre>
+                <p>
+                    This is catastrophic at scale. A simple page with 100 orders triggers 101 database queries.
+                </p>
+
+                <h2>Solution 1: Explicit Loading with Include</h2>
+                <p>
+                    Use <code>Include()</code> to eagerly load related entities in a single query:
+                </p>
+                <pre><code>// Good: 1 query with JOIN
+var orders = dbContext.Orders
+    .Include(o => o.Items)
+    .ToList();</code></pre>
+                <p>
+                    For nested relationships:
+                </p>
+                <pre><code>var orders = dbContext.Orders
+    .Include(o => o.Items)
+        .ThenInclude(i => i.Product)
+    .ToList();</code></pre>
+
+                <h2>Solution 2: Projection (Select)</h2>
+                <p>
+                    Instead of loading entire entities, project only what you need:
+                </p>
+                <pre><code>// Excellent: minimal data transfer
+var orderSummaries = dbContext.Orders
+    .Select(o => new OrderSummaryDto
+    {
+        OrderId = o.Id,
+        OrderDate = o.OrderDate,
+        ItemCount = o.Items.Count,
+        TotalPrice = o.Items.Sum(i => i.Price)
+    })
+    .ToList();</code></pre>
+
+                <h2>Solution 3: Compiled Queries</h2>
+                <p>
+                    For frequently-executed queries, compile them to avoid repeated parameterization overhead:
+                </p>
+                <pre><code>private static readonly Func&lt;AppDbContext, int, Task&lt;Order&gt;&gt; GetOrderById =
+    EF.CompileAsyncQuery((AppDbContext ctx, int id) =>
+        ctx.Orders
+            .Include(o => o.Items)
+            .FirstOrDefault(o => o.Id == id));
+
+// Usage
+var order = await GetOrderById(dbContext, orderId);</code></pre>
+
+                <h2>Solution 4: Raw SQL & Dapper for Complex Queries</h2>
+                <p>
+                    When LINQ becomes unwieldy, use raw SQL or Dapper:
+                </p>
+                <pre><code>// Dapper example
+using var connection = new SqlConnection(connectionString);
+var orders = connection.Query&lt;OrderDetailDto&gt;(
+    @"SELECT o.Id, o.OrderDate, COUNT(i.Id) as ItemCount
+      FROM Orders o
+      LEFT JOIN OrderItems i ON i.OrderId = o.Id
+      WHERE o.CreatedDate > @date
+      GROUP BY o.Id, o.OrderDate",
+    new { date = DateTime.Now.AddDays(-30) }
+).ToList();</code></pre>
+
+                <h2>Best Practices</h2>
+                <ul>
+                    <li><strong>Profile first:</strong> Use EF Core logging or tools like MiniProfiler to detect N+1 patterns.</li>
+                    <li><strong>Use async:</strong> <code>ToListAsync()</code>, <code>FirstOrDefaultAsync()</code> to prevent blocking.</li>
+                    <li><strong>Avoid lazy loading in loops:</strong> Always eagerly load or use projections.</li>
+                    <li><strong>Consider split queries:</strong> For large result sets, use <code>.AsSplitQuery()</code> to avoid Cartesian products.</li>
+                    <li><strong>Monitor memory:</strong> Loading 1M rows into memory destroys performance; use pagination.</li>
+                </ul>
+
+                <h2>Conclusion</h2>
+                <p>
+                    Performance is a feature. By understanding these patterns and profiling consistently, 
+                    you can build EF Core applications that scale efficiently. Start with projections, 
+                    use Include where appropriate, and don't hesitate to drop to Dapper for edge cases.
+                </p>
+
+                <p><strong>Questions or additional patterns?</strong> Reach out on <a href="https://github.com/bejoyalson">GitHub</a>.</p>
+            </div>
+
+            <div class="article-footer">
+                <p><a href="/#blog">← Back to Blog</a></p>
+            </div>
+        </div>
+    </article>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2025 Bejoy Alson. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="../js/main.js"></script>
+</body>
+</html>

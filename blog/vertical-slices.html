@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Designing Vertical Slice APIs in ASP.NET Core. Clean architecture patterns for organizing features, handlers, DTOs, and validation. Practical examples and benefits.">
+    <meta name="keywords" content="vertical slices, ASP.NET Core, clean architecture, feature organization, C#">
+    <meta name="author" content="Bejoy Alson">
+    
+    <link rel="canonical" href="https://bejoyalson.github.io/blog/vertical-slices.html">
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="css/blog.css">
+    
+    <title>Designing Vertical Slice APIs in ASP.NET Core — Bejoy Alson</title>
+    
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "BlogPosting",
+        "headline": "Designing Vertical Slice APIs in ASP.NET Core",
+        "datePublished": "2025-11-01",
+        "dateModified": "2025-11-01",
+        "author": {
+            "@type": "Person",
+            "name": "Bejoy Alson",
+            "url": "https://bejoyalson.github.io"
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": "Bejoy Alson",
+            "url": "https://bejoyalson.github.io"
+        },
+        "description": "Why vertical slices beat layered architecture for maintainability. Includes patterns for organizing controllers, handlers, DTOs, and validation within feature-based folders."
+    }
+    </script>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-brand">
+                <a href="/">Bejoy Alson</a>
+            </div>
+            <ul class="nav-menu">
+                <li><a href="/#about">About</a></li>
+                <li><a href="/#projects">Projects</a></li>
+                <li><a href="/#blog">Blog</a></li>
+                <li><a href="/#contact">Contact</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Blog Post -->
+    <article class="blog-article">
+        <div class="container">
+            <div class="article-header">
+                <h1>Designing Vertical Slice APIs in ASP.NET Core</h1>
+                <p class="article-meta">
+                    Published on <time datetime="2025-11-01">November 1, 2025</time> 
+                    by <a href="/">Bejoy Alson</a>
+                </p>
+            </div>
+
+            <div class="article-content">
+                <h2>The Problem with Layers</h2>
+                <p>
+                    Traditional layered architecture (Controllers → Services → Repositories → Data) feels clean at first. 
+                    But as your API grows, you end up with:
+                </p>
+                <ul>
+                    <li>Controllers shared across multiple features</li>
+                    <li>Generic services that do too much</li>
+                    <li>DTOs scattered everywhere</li>
+                    <li>Coupling across layers</li>
+                    <li>Hard to delete a feature without breaking others</li>
+                </ul>
+                <p>
+                    Vertical slices solve this by organizing code around features, not layers.
+                </p>
+
+                <h2>What Is a Vertical Slice?</h2>
+                <p>
+                    A vertical slice is a complete feature, organized in its own folder, with all code it needs:
+                </p>
+                <pre><code>Features/
+├── Users/
+│   ├── CreateUser/
+│   │   ├── CreateUserCommand.cs
+│   │   ├── CreateUserHandler.cs
+│   │   ├── CreateUserDto.cs
+│   │   ├── CreateUserValidator.cs
+│   │   └── CreateUserEndpoint.cs
+│   ├── GetUser/
+│   │   ├── GetUserQuery.cs
+│   │   ├── GetUserHandler.cs
+│   │   ├── GetUserDto.cs
+│   │   └── GetUserEndpoint.cs
+│   └── DeleteUser/
+│       ├── DeleteUserCommand.cs
+│       ├── DeleteUserHandler.cs
+│       └── DeleteUserEndpoint.cs</code></pre>
+                <p>
+                    Each feature is independent. Delete the Users folder, and nothing breaks.
+                </p>
+
+                <h2>Architecture Pattern: MediatR + Endpoints</h2>
+                <p>
+                    We use MediatR to decouple handlers from endpoints:
+                </p>
+                <pre><code>// CreateUserCommand.cs
+public record CreateUserCommand(string Email, string Name) : IRequest&lt;CreateUserDto&gt;;
+
+// CreateUserHandler.cs
+public class CreateUserHandler : IRequestHandler&lt;CreateUserCommand, CreateUserDto&gt;
+{
+    private readonly AppDbContext dbContext;
+
+    public CreateUserHandler(AppDbContext dbContext)
+    {
+        this.dbContext = dbContext;
+    }
+
+    public async Task&lt;CreateUserDto&gt; Handle(CreateUserCommand request, CancellationToken ct)
+    {
+        var user = new User { Email = request.Email, Name = request.Name };
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync(ct);
+        return new CreateUserDto(user.Id, user.Email, user.Name);
+    }
+}
+
+// CreateUserEndpoint.cs (using Carter or Minimal APIs)
+public class CreateUserEndpoint : IEndpointDefinition
+{
+    public void DefineEndpoints(WebApplication app)
+    {
+        app.MapPost("/api/users", Create)
+            .WithName("CreateUser")
+            .Produces&lt;CreateUserDto&gt;(StatusCodes.Status201Created)
+            .WithOpenApi();
+    }
+
+    public async Task&lt;IResult&gt; Create(CreateUserCommand command, IMediator mediator)
+    {
+        var result = await mediator.Send(command);
+        return Results.Created($"/api/users/{result.Id}", result);
+    }
+}</code></pre>
+
+                <h2>Benefits</h2>
+                <ul>
+                    <li><strong>Isolation:</strong> Features don't know about each other</li>
+                    <li><strong>Scalability:</strong> Easy to add/remove features without affecting others</li>
+                    <li><strong>Testability:</strong> Handler tests are simple (just command → result)</li>
+                    <li><strong>Team Parallelism:</strong> Multiple developers work on different features without merge conflicts</li>
+                    <li><strong>Single Responsibility:</strong> Each class has one reason to change</li>
+                </ul>
+
+                <h2>Shared Code</h2>
+                <p>
+                    Keep truly shared code in separate folders:
+                </p>
+                <pre><code>src/
+├── Features/
+│   ├── Users/
+│   ├── Orders/
+│   └── Products/
+├── Shared/
+│   ├── Behaviors/           # MediatR pipeline behaviors
+│   ├── Extensions/          # Extension methods
+│   ├── Validators/          # Base validators
+│   └── Exceptions/          # Domain exceptions
+├── Domain/
+│   └── Entities/</code></pre>
+
+                <h2>Best Practices</h2>
+                <ul>
+                    <li><strong>One command/query per feature:</strong> Avoid god handlers</li>
+                    <li><strong>Use validators:</strong> FluentValidation in each feature</li>
+                    <li><strong>Share entities, not DTOs:</strong> Each feature defines its own DTOs</li>
+                    <li><strong>Exception handling:</strong> Use middleware + typed exceptions</li>
+                    <li><strong>Pagination:</strong> Include skip/take in queries, implement at query level</li>
+                </ul>
+
+                <h2>Conclusion</h2>
+                <p>
+                    Vertical slices aren't a perfect fit for every project (monoliths with 100+ features benefit most), 
+                    but for mid-size APIs, they dramatically improve maintainability and team velocity.
+                </p>
+
+                <p><strong>Try it:</strong> Refactor one feature with this pattern and measure the difference.</p>
+            </div>
+
+            <div class="article-footer">
+                <p><a href="/#blog">← Back to Blog</a></p>
+            </div>
+        </div>
+    </article>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2025 Bejoy Alson. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="../js/main.js"></script>
+</body>
+</html>
