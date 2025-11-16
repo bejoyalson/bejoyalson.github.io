@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="SQL Server query optimization techniques. Learn how to write efficient queries, use indexes effectively, and analyze execution plans.">
+    <meta name="keywords" content="SQL Server, query optimization, database performance, indexing, execution plans">
+    <meta name="author" content="Bejoy Alson">
+    <link rel="canonical" href="https://bejoyalson.github.io/blog/sql-server-optimization.html">
+    
+    <title>SQL Server Query Optimization: A Practical Guide</title>
+    <link rel="stylesheet" href="css/blog.css">
+    
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "BlogPosting",
+        "headline": "SQL Server Query Optimization: A Practical Guide",
+        "description": "Learn practical techniques to optimize SQL Server queries and improve database performance",
+        "author": {
+            "@type": "Person",
+            "name": "Bejoy Alson"
+        },
+        "datePublished": "2024-11-13",
+        "image": "https://bejoyalson.github.io/assets/blog-sqlserver.jpg"
+    }
+    </script>
+</head>
+<body>
+    <article class="blog-post">
+        <header class="blog-header">
+            <h1>SQL Server Query Optimization: A Practical Guide</h1>
+            <div class="blog-meta">
+                <span class="author">By Bejoy Alson</span>
+                <span class="date">November 13, 2024</span>
+                <span class="read-time">12 min read</span>
+            </div>
+        </header>
+
+        <section class="blog-content">
+            <h2>Introduction</h2>
+            <p>A slow database is often the bottleneck in application performance. In this guide, I'll share practical SQL Server optimization techniques I've used to improve query performance by 10-100x in production applications.</p>
+
+            <h2>Before You Optimize</h2>
+            <p>The first rule of optimization: measure before you optimize. Don't guess—use data.</p>
+
+            <h3>Enable Query Statistics</h3>
+            <pre><code>-- In SQL Server Management Studio
+-- Enable "Include Actual Execution Plan"
+-- Keyboard: Ctrl + L
+
+-- Or enable statistics
+SET STATISTICS IO ON
+SET STATISTICS TIME ON
+
+-- Your query here
+SELECT * FROM Orders WHERE CustomerId = 5;
+
+-- Output shows:
+-- Table 'Orders'. Scan count 1, logical reads 150, physical reads 2
+-- SQL Server Execution Times: CPU time = 23 ms, elapsed time = 45 ms</code></pre>
+
+            <h2>Technique 1: Create Strategic Indexes</h2>
+            <p>Indexes are the most impactful optimization tool.</p>
+
+            <p><strong>Identify Missing Indexes:</strong></p>
+            <pre><code>-- Find missing indexes
+SELECT 
+    CONVERT(DECIMAL(18,2), user_seeks * avg_total_user_cost * avg_user_impact * (user_seeks + user_scans + user_lookups)) AS improvement_measure,
+    equality_columns,
+    inequality_columns,
+    included_columns
+FROM sys.dm_db_missing_index_details d
+INNER JOIN sys.dm_db_missing_index_groups_stats s ON d.index_handle = s.index_handle
+WHERE database_id = DB_ID()
+ORDER BY improvement_measure DESC;</code></pre>
+
+            <p><strong>Create Effective Indexes:</strong></p>
+            <pre><code>-- ❌ Bad: Index on non-selective column
+CREATE INDEX idx_Status ON Orders(Status);
+
+-- ✅ Good: Index on selective column
+CREATE INDEX idx_CustomerId_CreatedDate ON Orders(CustomerId, CreatedDate);
+
+-- ✅ Better: Include columns to avoid lookups
+CREATE INDEX idx_CustomerId_CreatedDate_Includes 
+    ON Orders(CustomerId, CreatedDate) 
+    INCLUDE (OrderTotal, Status);</code></pre>
+
+            <h2>Technique 2: Analyze Execution Plans</h2>
+            <p>Execution plans show you how SQL Server executes your queries.</p>
+
+            <pre><code>-- View execution plan
+-- Press Ctrl + L before running query
+SELECT o.OrderId, o.OrderTotal, c.CustomerName
+FROM Orders o
+INNER JOIN Customers c ON o.CustomerId = c.CustomerId
+WHERE o.CreatedDate > DATEADD(MONTH, -1, GETDATE());
+
+-- Look for:
+-- ❌ Table Scans (bad - reads entire table)
+-- ✅ Index Seeks (good - uses index)
+-- ❌ Expensive operations (cost > 5%)
+-- ❌ Key Lookup (expensive, add column to index)</code></pre>
+
+            <h2>Technique 3: Fix N+1 Queries</h2>
+            <p>The classic performance killer: querying in a loop.</p>
+
+            <p><strong>❌ N+1 Pattern (BAD - 101 queries):</strong></p>
+            <pre><code>-- First query
+var customers = dbContext.Customers.ToList(); // 1 query
+
+// Second query in loop (N queries, one per customer)
+foreach (var customer in customers)
+{
+    var orders = dbContext.Orders
+        .Where(o => o.CustomerId == customer.Id)
+        .ToList(); // 100 more queries!
+}</code></pre>
+
+            <p><strong>✅ Optimized with JOIN (1 query):</strong></p>
+            <pre><code>-- Single query with JOIN
+var customersWithOrders = dbContext.Customers
+    .Include(c => c.Orders)
+    .ToList(); // 1 query with JOIN
+
+// Or use projection
+var data = dbContext.Customers
+    .SelectMany(c => c.Orders.DefaultIfEmpty(),
+        (c, o) => new { 
+            CustomerName = c.Name, 
+            OrderCount = c.Orders.Count 
+        })
+    .ToList();</code></pre>
+
+            <h2>Technique 4: Optimize JOIN Operations</h2>
+            <p>JOINs can be slow if not done correctly.</p>
+
+            <p><strong>❌ Inefficient JOIN:</strong></p>
+            <pre><code>SELECT c.CustomerName, COUNT(o.OrderId) as OrderCount
+FROM Customers c
+FULL OUTER JOIN Orders o ON c.CustomerId = o.CustomerId
+WHERE c.CreatedDate > DATEADD(YEAR, -1, GETDATE())
+GROUP BY c.CustomerId, c.CustomerName;</code></pre>
+
+            <p><strong>✅ Better Approach:</strong></p>
+            <pre><code>SELECT c.CustomerId, c.CustomerName, COUNT(o.OrderId) as OrderCount
+FROM Customers c
+LEFT JOIN Orders o ON c.CustomerId = o.CustomerId 
+    AND o.CreatedDate > DATEADD(YEAR, -1, GETDATE())
+WHERE c.CreatedDate > DATEADD(YEAR, -1, GETDATE())
+GROUP BY c.CustomerId, c.CustomerName;</code></pre>
+
+            <h2>Technique 5: Use Appropriate Data Types</h2>
+            <p>Data types affect storage and performance.</p>
+
+            <pre><code>-- ❌ Bad: Over-sized data types
+CREATE TABLE Orders (
+    OrderId BIGINT,           -- Unnecessary if you need <2 billion
+    OrderTotal DECIMAL(20,6), -- Too much precision
+    Status NVARCHAR(MAX)      -- Wasteful
+);
+
+-- ✅ Good: Appropriate sizes
+CREATE TABLE Orders (
+    OrderId INT,              -- 2 billion+ orders is unlikely
+    OrderTotal DECIMAL(10,2), -- 2 decimal places for currency
+    Status VARCHAR(50)        -- Fixed length for codes
+);</code></pre>
+
+            <h2>Technique 6: Partition Large Tables</h2>
+            <p>For tables with millions of rows, partitioning improves performance:</p>
+
+            <pre><code>-- Create partition function by date
+CREATE PARTITION FUNCTION pfOrderDate (DATETIME)
+AS RANGE LEFT FOR VALUES 
+    ('2023-01-01', '2024-01-01', '2025-01-01');
+
+-- Create partition scheme
+CREATE PARTITION SCHEME psOrderDate
+AS PARTITION pfOrderDate 
+ALL TO ([PRIMARY]);
+
+-- Create table on partition scheme
+CREATE TABLE Orders (
+    OrderId INT PRIMARY KEY,
+    OrderDate DATETIME NOT NULL,
+    OrderTotal DECIMAL(10,2)
+) ON psOrderDate(OrderDate);
+
+-- Queries automatically use correct partition</code></pre>
+
+            <h2>Technique 7: Use Statistics and Maintenance Plans</h2>
+            <p>SQL Server uses statistics to optimize queries. Keep them updated:</p>
+
+            <pre><code>-- Update statistics
+UPDATE STATISTICS Orders;
+UPDATE STATISTICS Orders idx_CustomerId_CreatedDate;
+
+-- Check statistics freshness
+SELECT 
+    name,
+    STATS_DATE(object_id, stats_id) as LastUpdated
+FROM sys.stats
+WHERE object_id = OBJECT_ID('Orders');
+
+-- Maintenance plan: Run weekly
+-- SQL Server Agent > Maintenance Plans > Create Plan
+-- Add: Reorganize Index, Update Statistics tasks</code></pre>
+
+            <h2>Technique 8: Avoid Expensive Operations</h2>
+            <p>Some operations are inherently slow:</p>
+
+            <pre><code>-- ❌ Slow: Function on column (prevents index usage)
+SELECT * FROM Orders WHERE YEAR(CreatedDate) = 2024;
+
+-- ✅ Fast: Range comparison
+SELECT * FROM Orders 
+WHERE CreatedDate >= '2024-01-01' 
+  AND CreatedDate < '2025-01-01';
+
+-- ❌ Slow: OR conditions (multiple scans)
+SELECT * FROM Orders 
+WHERE Status = 'Shipped' OR Status = 'Delivered';
+
+-- ✅ Fast: IN clause (single seek)
+SELECT * FROM Orders 
+WHERE Status IN ('Shipped', 'Delivered');
+
+-- ❌ Slow: NOT IN with NULL values
+SELECT * FROM Orders 
+WHERE CustomerId NOT IN (SELECT CustomerId FROM Customers);
+
+-- ✅ Fast: NOT EXISTS
+SELECT * FROM Orders o
+WHERE NOT EXISTS (
+    SELECT 1 FROM Customers c 
+    WHERE c.CustomerId = o.CustomerId
+);</code></pre>
+
+            <h2>Technique 9: Use Query Hints Sparingly</h2>
+            <p>Sometimes hint the optimizer, but use carefully:</p>
+
+            <pre><code>-- Force index usage
+SELECT * FROM Orders WITH (NOLOCK) 
+WHERE CustomerId = 5;
+
+-- NOLOCK = dirty reads but faster
+-- Use for reports/analytics, not transactional queries
+
+-- Limit rows for testing
+SELECT TOP 10 * FROM LargeTable;</code></pre>
+
+            <h2>Real-World Example: Query Optimization</h2>
+
+            <p><strong>Original Slow Query (15 seconds):</strong></p>
+            <pre><code>SELECT 
+    c.CustomerId,
+    c.CustomerName,
+    COUNT(o.OrderId) as OrderCount,
+    SUM(o.OrderTotal) as TotalSpent
+FROM Customers c
+FULL OUTER JOIN Orders o ON c.CustomerId = o.CustomerId
+WHERE YEAR(o.CreatedDate) = 2024
+GROUP BY c.CustomerId, c.CustomerName
+ORDER BY TotalSpent DESC;</code></pre>
+
+            <p><strong>Step 1: Fix the YEAR function and FULL OUTER JOIN</strong></p>
+            <pre><code>SELECT 
+    c.CustomerId,
+    c.CustomerName,
+    COUNT(o.OrderId) as OrderCount,
+    SUM(o.OrderTotal) as TotalSpent
+FROM Customers c
+LEFT JOIN Orders o ON c.CustomerId = o.CustomerId
+    AND o.CreatedDate >= '2024-01-01'
+    AND o.CreatedDate < '2025-01-01'
+GROUP BY c.CustomerId, c.CustomerName
+ORDER BY TotalSpent DESC;</code></pre>
+
+            <p><strong>Step 2: Add indexes</strong></p>
+            <pre><code>CREATE INDEX idx_Orders_CustomerId_CreatedDate 
+    ON Orders(CustomerId, CreatedDate) 
+    INCLUDE (OrderTotal);</code></pre>
+
+            <p><strong>Result: 150ms (100x faster!)</strong></p>
+
+            <h2>Monitoring Ongoing Performance</h2>
+            <pre><code>-- Find currently expensive queries
+SELECT TOP 20
+    qs.execution_count,
+    qs.total_elapsed_time / 1000000 as total_seconds,
+    qs.total_elapsed_time / qs.execution_count / 1000 as avg_milliseconds,
+    SUBSTRING(st.text, 1, 100) as query_text
+FROM sys.dm_exec_query_stats qs
+CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
+ORDER BY qs.total_elapsed_time DESC;</code></pre>
+
+            <h2>Conclusion</h2>
+            <p>Query optimization is a systematic process. Measure, analyze, optimize, and verify. Start with indexes, fix N+1 queries, and analyze execution plans. These three techniques alone will solve 90% of performance issues.</p>
+
+            <hr>
+            <div class="blog-footer">
+                <p><strong>About Bejoy Alson:</strong> Developer focused on building performant applications. I regularly optimize SQL queries and share optimization techniques.</p>
+                <p><a href="https://bejoyalson.github.io">← Back to Portfolio</a></p>
+            </div>
+        </section>
+    </article>
+</body>
+</html>

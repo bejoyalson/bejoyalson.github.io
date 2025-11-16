@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Docker and containerization best practices for ASP.NET Core applications. Learn how to containerize, deploy, and scale your applications effectively.">
+    <meta name="keywords" content="Docker, containerization, ASP.NET Core, microservices, deployment">
+    <meta name="author" content="Bejoy Alson">
+    <link rel="canonical" href="https://bejoyalson.github.io/blog/docker-containerization.html">
+    
+    <title>Docker & Containerization Best Practices for ASP.NET Core</title>
+    <link rel="stylesheet" href="css/blog.css">
+    
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "BlogPosting",
+        "headline": "Docker & Containerization Best Practices for ASP.NET Core",
+        "description": "Learn best practices for containerizing ASP.NET Core applications with Docker",
+        "author": {
+            "@type": "Person",
+            "name": "Bejoy Alson"
+        },
+        "datePublished": "2024-11-15",
+        "image": "https://bejoyalson.github.io/assets/blog-docker.jpg"
+    }
+    </script>
+</head>
+<body>
+    <article class="blog-post">
+        <header class="blog-header">
+            <h1>Docker & Containerization: Best Practices for ASP.NET Core</h1>
+            <div class="blog-meta">
+                <span class="author">By Bejoy Alson</span>
+                <span class="date">November 15, 2024</span>
+                <span class="read-time">8 min read</span>
+            </div>
+        </header>
+
+        <section class="blog-content">
+            <h2>Introduction</h2>
+            <p>Docker has become the industry standard for containerization, and for good reason. When building ASP.NET Core applications, Docker provides consistency across development, staging, and production environments. In this article, I'll share best practices I've learned from containerizing production applications.</p>
+
+            <h2>Why Docker Matters for ASP.NET Core</h2>
+            <p>ASP.NET Core applications are cross-platform and lightweight, making them perfect for Docker containerization. Docker solves the "works on my machine" problem by packaging your application with all its dependencies into a single container.</p>
+            
+            <p>Benefits:</p>
+            <ul>
+                <li><strong>Consistency:</strong> Same environment from development to production</li>
+                <li><strong>Scalability:</strong> Easily scale containers using orchestration tools</li>
+                <li><strong>Isolation:</strong> Multiple applications don't conflict with each other</li>
+                <li><strong>Deployment:</strong> Simple deployment process across environments</li>
+            </ul>
+
+            <h2>Best Practice 1: Multi-Stage Builds</h2>
+            <p>Multi-stage Docker builds reduce final image size and improve security. Here's why they matter:</p>
+
+            <pre><code>FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+COPY ["MyApp.csproj", "./"]
+RUN dotnet restore "MyApp.csproj"
+
+COPY . .
+RUN dotnet build "MyApp.csproj" -c Release -o /app/build
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+WORKDIR /app
+
+COPY --from=build /app/build .
+
+ENTRYPOINT ["dotnet", "MyApp.dll"]</code></pre>
+
+            <p><strong>Why this works:</strong></p>
+            <ul>
+                <li>Build stage includes large SDK (~2GB)</li>
+                <li>Runtime stage includes only runtime (~200MB)</li>
+                <li>Final image is ~80% smaller</li>
+                <li>Faster deployments and less attack surface</li>
+            </ul>
+
+            <h2>Best Practice 2: Health Checks</h2>
+            <p>Kubernetes and container orchestrators need to know if your application is healthy. Implement health checks:</p>
+
+            <pre><code>// In Program.cs
+builder.Services.AddHealthChecks()
+    .AddCheck("Database", () => 
+    {
+        try 
+        {
+            using var connection = new SqlConnection(connectionString);
+            connection.Open();
+            return HealthCheckResult.Healthy();
+        }
+        catch 
+        {
+            return HealthCheckResult.Unhealthy();
+        }
+    })
+    .AddCheck("API", () => HealthCheckResult.Healthy());
+
+app.MapHealthChecks("/health");</code></pre>
+
+            <p>In your Dockerfile:</p>
+            <pre><code>HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:80/health || exit 1</code></pre>
+
+            <h2>Best Practice 3: Environment Configuration</h2>
+            <p>Never hardcode configuration in Docker images. Use environment variables:</p>
+
+            <pre><code>// In Program.cs
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
+    ?? throw new InvalidOperationException("Connection string not found");
+
+var logLevel = builder.Configuration.GetValue<string>("LOG_LEVEL") ?? "Information";
+
+builder.Logging.SetMinimumLevel(Enum.Parse<LogLevel>(logLevel));</code></pre>
+
+            <p>Then pass environment variables at runtime:</p>
+            <pre><code>docker run -e "ConnectionStrings__DefaultConnection=Server=db;Database=myapp" \
+    -e "LOG_LEVEL=Debug" \
+    myapp:latest</code></pre>
+
+            <h2>Best Practice 4: Minimize Layer Count</h2>
+            <p>Each RUN command creates a layer. Combine commands to reduce layers:</p>
+
+            <pre><code>// ❌ Bad: 3 layers
+RUN apt-get update
+RUN apt-get install -y curl
+RUN apt-get clean
+
+// ✅ Good: 1 layer
+RUN apt-get update && \
+    apt-get install -y curl && \
+    apt-get clean</code></pre>
+
+            <h2>Best Practice 5: Don't Run as Root</h2>
+            <p>Create a non-root user for security:</p>
+
+            <pre><code>FROM mcr.microsoft.com/dotnet/aspnet:8.0
+WORKDIR /app
+
+# Create non-root user
+RUN useradd -m -u 1000 appuser
+
+COPY --chown=appuser:appuser . .
+
+USER appuser
+
+ENTRYPOINT ["dotnet", "MyApp.dll"]</code></pre>
+
+            <h2>Best Practice 6: Docker Compose for Local Development</h2>
+            <p>Use Docker Compose to run your entire application stack locally:</p>
+
+            <pre><code>version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "5000:80"
+    environment:
+      - ConnectionStrings__DefaultConnection=Server=db;Database=myapp;User Id=sa;Password=YourPassword123!
+      - LOG_LEVEL=Debug
+    depends_on:
+      - db
+
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=YourPassword123!
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqldata:/var/opt/mssql
+
+volumes:
+  sqldata:</code></pre>
+
+            <p>Run with: <code>docker-compose up</code></p>
+
+            <h2>Best Practice 7: .dockerignore File</h2>
+            <p>Exclude unnecessary files from the Docker build context:</p>
+
+            <pre><code>.git
+.gitignore
+.dockerignore
+bin
+obj
+.vs
+.vscode
+node_modules
+*.md
+.env
+.env.local</code></pre>
+
+            <h2>Best Practice 8: Image Size Optimization</h2>
+            <p>Keep your images small for faster deployments:</p>
+
+            <ul>
+                <li>Use Alpine Linux for smaller base images (if compatible)</li>
+                <li>Remove build artifacts from final image (multi-stage builds)</li>
+                <li>Use .dockerignore to exclude unnecessary files</li>
+                <li>Target specific runtime: aspnet vs. runtime</li>
+            </ul>
+
+            <pre><code>// Use runtime if you only need to run the app
+FROM mcr.microsoft.com/dotnet/runtime:8.0
+
+// Use aspnet for web applications
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+
+// Both are ~200MB, but aspnet includes web hosting</code></pre>
+
+            <h2>Production Deployment Example</h2>
+            <p>A complete production-ready Dockerfile:</p>
+
+            <pre><code>FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+COPY ["MyApp.csproj", "./"]
+RUN dotnet restore "MyApp.csproj"
+
+COPY . .
+RUN dotnet publish "MyApp.csproj" -c Release -o /app/publish
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+WORKDIR /app
+
+RUN useradd -m -u 1000 appuser
+COPY --from=build --chown=appuser:appuser /app/publish .
+
+USER appuser
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost/health || exit 1
+
+ENTRYPOINT ["dotnet", "MyApp.dll"]</code></pre>
+
+            <h2>Conclusion</h2>
+            <p>Docker containerization is essential for modern ASP.NET Core development. By following these best practices, you'll create secure, efficient, and maintainable containers that scale reliably in production.</p>
+
+            <p>Key takeaways:</p>
+            <ul>
+                <li>Use multi-stage builds to keep images small</li>
+                <li>Implement health checks for orchestration</li>
+                <li>Use environment variables for configuration</li>
+                <li>Run as non-root user for security</li>
+                <li>Optimize image size for faster deployments</li>
+            </ul>
+
+            <hr>
+            <div class="blog-footer">
+                <p><strong>About Bejoy Alson:</strong> Full-stack developer with expertise in building scalable web applications. I regularly write about ASP.NET Core, cloud deployment, and software architecture.</p>
+                <p><a href="https://bejoyalson.github.io">← Back to Portfolio</a></p>
+            </div>
+        </section>
+    </article>
+</body>
+</html>

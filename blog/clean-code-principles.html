@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Clean Code principles and SOLID design patterns for maintainable software. Learn how to write code that's easy to read, test, and maintain.">
+    <meta name="keywords" content="clean code, SOLID principles, software design, code quality, refactoring">
+    <meta name="author" content="Bejoy Alson">
+    <link rel="canonical" href="https://bejoyalson.github.io/blog/clean-code-principles.html">
+    
+    <title>Clean Code & SOLID Principles: Writing Maintainable Software</title>
+    <link rel="stylesheet" href="css/blog.css">
+    
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "BlogPosting",
+        "headline": "Clean Code & SOLID Principles: Writing Maintainable Software",
+        "description": "Master SOLID principles and clean code practices for writing maintainable, scalable software",
+        "author": {
+            "@type": "Person",
+            "name": "Bejoy Alson"
+        },
+        "datePublished": "2024-11-14",
+        "image": "https://bejoyalson.github.io/assets/blog-cleancode.jpg"
+    }
+    </script>
+</head>
+<body>
+    <article class="blog-post">
+        <header class="blog-header">
+            <h1>Clean Code & SOLID Principles: Writing Maintainable Software</h1>
+            <div class="blog-meta">
+                <span class="author">By Bejoy Alson</span>
+                <span class="date">November 14, 2024</span>
+                <span class="read-time">10 min read</span>
+            </div>
+        </header>
+
+        <section class="blog-content">
+            <h2>Introduction</h2>
+            <p>Code is read far more often than it's written. The difference between a successful project and a maintenance nightmare often comes down to code quality. In this article, I'll share SOLID principles and clean code practices that have transformed my approach to writing maintainable software.</p>
+
+            <h2>Why Clean Code Matters</h2>
+            <p>When you write code, you're not just writing for computers—you're writing for the next developer who will read it (often yourself, 6 months later). Clean code:</p>
+            <ul>
+                <li>Reduces bugs and maintenance costs</li>
+                <li>Makes onboarding new developers faster</li>
+                <li>Enables faster feature development</li>
+                <li>Reduces technical debt</li>
+                <li>Makes refactoring safer and easier</li>
+            </ul>
+
+            <h2>SOLID Principles Overview</h2>
+            <p>SOLID is an acronym for five design principles that make code more understandable, flexible, and maintainable:</p>
+
+            <h3>1. Single Responsibility Principle (SRP)</h3>
+            <p>A class should have only one reason to change.</p>
+
+            <p><strong>❌ Bad Example:</strong></p>
+            <pre><code>public class UserManager
+{
+    public void CreateUser(string name, string email)
+    {
+        // Validate user
+        // Save to database
+        // Send welcome email
+        // Log activity
+        // Update cache
+    }
+}</code></pre>
+
+            <p>This class has too many responsibilities!</p>
+
+            <p><strong>✅ Good Example:</strong></p>
+            <pre><code>public class UserService
+{
+    public void CreateUser(CreateUserCommand command)
+    {
+        var user = User.Create(command.Name, command.Email);
+        _userRepository.Save(user);
+        _userCreatedEvent.Publish(new UserCreated(user.Id));
+    }
+}
+
+public class UserValidator
+{
+    public ValidationResult Validate(CreateUserCommand command) { }
+}
+
+public class WelcomeEmailService
+{
+    public void SendWelcomeEmail(User user) { }
+}
+
+public class UserActivityLogger
+{
+    public void LogUserCreated(User user) { }
+}</code></pre>
+
+            <h3>2. Open/Closed Principle (OCP)</h3>
+            <p>Software entities should be open for extension, closed for modification.</p>
+
+            <p><strong>❌ Bad Example:</strong></p>
+            <pre><code>public class DiscountCalculator
+{
+    public decimal CalculateDiscount(string userType, decimal amount)
+    {
+        if (userType == "Premium")
+            return amount * 0.20m;
+        else if (userType == "Gold")
+            return amount * 0.30m;
+        else if (userType == "Platinum")
+            return amount * 0.40m;
+        return 0;
+    }
+}
+// Adding new user type requires modifying this class!</code></pre>
+
+            <p><strong>✅ Good Example:</strong></p>
+            <pre><code>public interface IDiscountStrategy
+{
+    decimal CalculateDiscount(decimal amount);
+}
+
+public class PremiumUserDiscount : IDiscountStrategy
+{
+    public decimal CalculateDiscount(decimal amount) => amount * 0.20m;
+}
+
+public class GoldUserDiscount : IDiscountStrategy
+{
+    public decimal CalculateDiscount(decimal amount) => amount * 0.30m;
+}
+
+public class DiscountCalculator
+{
+    public decimal CalculateDiscount(IDiscountStrategy strategy, decimal amount)
+    {
+        return strategy.CalculateDiscount(amount);
+    }
+}
+// Adding new user type: create new class, no modification needed!</code></pre>
+
+            <h3>3. Liskov Substitution Principle (LSP)</h3>
+            <p>Derived classes must be substitutable for their base classes.</p>
+
+            <p><strong>❌ Bad Example:</strong></p>
+            <pre><code>public class Bird
+{
+    public virtual void Fly() { }
+}
+
+public class Penguin : Bird
+{
+    public override void Fly()
+    {
+        throw new NotImplementedException("Penguins can't fly!");
+    }
+}
+// Violates LSP! Can't use Penguin where Bird is expected</code></pre>
+
+            <p><strong>✅ Good Example:</strong></p>
+            <pre><code>public abstract class Bird { }
+
+public abstract class FlyingBird : Bird
+{
+    public abstract void Fly();
+}
+
+public class Eagle : FlyingBird
+{
+    public override void Fly() { /* implementation */ }
+}
+
+public class Penguin : Bird
+{
+    public void Swim() { /* implementation */ }
+}
+// No violation! Each type can be used where expected</code></pre>
+
+            <h3>4. Interface Segregation Principle (ISP)</h3>
+            <p>Clients shouldn't be forced to depend on interfaces they don't use.</p>
+
+            <p><strong>❌ Bad Example:</strong></p>
+            <pre><code>public interface IWorker
+{
+    void Work();
+    void Eat();
+}
+
+public class Robot : IWorker
+{
+    public void Work() { /* implementation */ }
+    
+    public void Eat()
+    {
+        throw new NotImplementedException("Robots don't eat!");
+    }
+}</code></pre>
+
+            <p><strong>✅ Good Example:</strong></p>
+            <pre><code>public interface IWorker
+{
+    void Work();
+}
+
+public interface IEater
+{
+    void Eat();
+}
+
+public class Human : IWorker, IEater
+{
+    public void Work() { }
+    public void Eat() { }
+}
+
+public class Robot : IWorker
+{
+    public void Work() { }
+}</code></pre>
+
+            <h3>5. Dependency Inversion Principle (DIP)</h3>
+            <p>High-level modules shouldn't depend on low-level modules. Both should depend on abstractions.</p>
+
+            <p><strong>❌ Bad Example:</strong></p>
+            <pre><code>public class UserService
+{
+    private readonly SqlServerUserRepository _repository;
+    
+    public UserService()
+    {
+        _repository = new SqlServerUserRepository();
+    }
+}
+// Hard to test, tightly coupled to SQL Server!</code></pre>
+
+            <p><strong>✅ Good Example:</strong></p>
+            <pre><code>public class UserService
+{
+    private readonly IUserRepository _repository;
+    
+    public UserService(IUserRepository repository)
+    {
+        _repository = repository;
+    }
+}
+
+// Can inject different implementations
+var sqlRepository = new SqlServerUserRepository();
+var mongoRepository = new MongoUserRepository();
+var service = new UserService(sqlRepository);
+</code></pre>
+
+            <h2>Clean Code Practices</h2>
+
+            <h3>1. Meaningful Names</h3>
+            <pre><code>// ❌ Bad
+var d = DateTime.Now;
+var u = new User();
+var x = 5;
+
+// ✅ Good
+var currentDate = DateTime.Now;
+var newUser = new User();
+var maxRetryAttempts = 5;</code></pre>
+
+            <h3>2. Small, Focused Functions</h3>
+            <pre><code>// ❌ Bad: Function does too much
+public void ProcessOrder(Order order)
+{
+    ValidateOrder(order);
+    CalculateTax(order);
+    ApplyDiscount(order);
+    SaveToDatabase(order);
+    SendConfirmationEmail(order);
+}
+
+// ✅ Good: Single responsibility
+public void ProcessOrder(Order order)
+{
+    ValidateOrder(order);
+    var finalAmount = CalculateFinalAmount(order);
+    SaveOrder(order, finalAmount);
+    NotifyCustomer(order);
+}</code></pre>
+
+            <h3>3. Error Handling</h3>
+            <pre><code>// ❌ Bad
+var user = GetUser(id);
+if (user == null) return null;
+
+// ✅ Good
+var user = GetUserOrThrow(id);
+// or
+var user = GetUser(id) ?? throw new UserNotFoundException(id);</code></pre>
+
+            <h3>4. DRY (Don't Repeat Yourself)</h3>
+            <pre><code>// ❌ Bad: Code duplication
+public decimal CalculateTax1(decimal amount) => amount * 0.1m;
+public decimal CalculateTax2(decimal amount) => amount * 0.1m;
+
+// ✅ Good: Single implementation
+public decimal CalculateTax(decimal amount) => amount * _taxRate;</code></pre>
+
+            <h2>Refactoring for Clean Code</h2>
+            <p>Refactoring is the process of improving code without changing its external behavior. Here's a practical example:</p>
+
+            <p><strong>Before Refactoring:</strong></p>
+            <pre><code>public class OrderProcessor
+{
+    public void Process(Order o)
+    {
+        if (o.Items.Count > 0)
+        {
+            decimal t = 0;
+            foreach (var i in o.Items)
+            {
+                t += i.Price * i.Qty;
+            }
+            if (t > 1000) t = t * 0.9m;
+            o.Total = t;
+            _db.SaveOrder(o);
+            _email.Send(o.Customer.Email, "Order confirmed");
+        }
+    }
+}</code></pre>
+
+            <p><strong>After Refactoring:</strong></p>
+            <pre><code>public class OrderProcessor
+{
+    public void Process(Order order)
+    {
+        ValidateOrder(order);
+        var total = CalculateOrderTotal(order);
+        ApplyBulkDiscount(total);
+        SaveOrder(order);
+        SendConfirmationEmail(order);
+    }
+
+    private decimal CalculateOrderTotal(Order order)
+    {
+        return order.Items.Sum(item => item.Price * item.Quantity);
+    }
+
+    private void ApplyBulkDiscount(Order order)
+    {
+        const decimal bulkDiscountThreshold = 1000;
+        const decimal bulkDiscountRate = 0.10m;
+        
+        if (order.Total > bulkDiscountThreshold)
+            order.Total *= (1 - bulkDiscountRate);
+    }
+
+    private void ValidateOrder(Order order) { }
+    private void SaveOrder(Order order) { }
+    private void SendConfirmationEmail(Order order) { }
+}</code></pre>
+
+            <h2>Conclusion</h2>
+            <p>Writing clean code is a skill that improves with practice. By following SOLID principles and clean code practices, you'll write software that's easier to maintain, test, and extend. Remember: code is written once but read many times. Write for the reader.</p>
+
+            <hr>
+            <div class="blog-footer">
+                <p><strong>About Bejoy Alson:</strong> Software developer passionate about writing clean, maintainable code. I believe good code is an investment in your project's future.</p>
+                <p><a href="https://bejoyalson.github.io">← Back to Portfolio</a></p>
+            </div>
+        </section>
+    </article>
+</body>
+</html>
